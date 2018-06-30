@@ -1,7 +1,6 @@
 ### 2018中国高校计算机大数据挑战赛-快手活跃用户预测
 
-　　第一次认真参与的机器学习比赛，初赛A榜100+（0.8197f1 vs top1 0.822f1），B榜110+(0.8181f1 vs top1 0.8198f1)，无奈离双100俱乐部还差了点儿，只能憾别了。从月初到月末，在这个题目上花了不少精力，在此总结分享一下个人经验[to github][1]{:target="_blank"}
-  [1]:（https://github.com/hellobilllee/ActiveUserPrediction）to github
+　　第一次认真参与的机器学习比赛，初赛A榜100+（0.8197f1 vs top1 0.822f1），B榜110+(0.8181f1 vs top1 0.8198f1)，无奈离双100俱乐部还差了点儿，只能憾别了。从月初到月末，在这个题目上花了不少精力，在此总结分享一下个人经验（https://github.com/hellobilllee/ActiveUserPrediction）
  
  希望能够给广大萌新和进入复赛的同学们提供些许参考价值吧。
   
