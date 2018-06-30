@@ -1,8 +1,6 @@
 ### 2018中国高校计算机大数据挑战赛-快手活跃用户预测
 
-　　第一次认真参与的机器学习比赛，初赛A榜100+（0.8197f1 vs top1 0.822f1），B榜110+(0.8181f1 vs top1 0.8198f1)，无奈离双100俱乐部还差了点儿，只能憾别了。从月初到月末，在这个题目上花了不少精力，在此总结分享一下个人经验（https://github.com/hellobilllee/ActiveUserPrediction）
- 
- 希望能够给广大萌新和进入复赛的同学们提供些许参考价值吧。
+　　第一次认真参与的机器学习比赛，初赛A榜100+（0.8197f1 vs top1 0.822f1），B榜110+(0.8181f1 vs top1 0.8198f1)，无奈离双100俱乐部还差了点儿，只能憾别了。从月初到月末，在这个题目上花了不少精力，在此总结分享一下个人经验（https://github.com/hellobilllee/ActiveUserPrediction）,希望能够给广大萌新和进入复赛的同学们提供些许参考价值吧。
   
 #### 赛题背景
 　　基于“快手”短视频脱敏和采样后的数据信息，预测未来一段时间活跃的用户。具体的，初赛是给定一个月的采样注册用户，以及与这些用户相关的App启动时间日志，视频拍摄时间日志和用户活动日志，预测这些用户还有哪些在下个月第一周还是活跃用户。
@@ -58,12 +56,13 @@
 2. parameter tuning: 调参真是一门玄学，前期我尝试了多次使用hyperopt和BayesSearchCV()进行调参，但是效果都没有不调参好，所以后来我就基本不调参了，只稍稍调整一下LGB当中树的个数，叶子树固定为4，多了就过拟合（后期就是固定使用LGB了）。
 3. model: 尝试了NN， DNN，加Gaussian噪声的NN，Catboost, LR, XGBoost, 效果都不好。 Cat boost和NN有时候效果挺好，但太容易过拟合了;XGB从个人使用的情况来看，一般干不过LGB，而且速度跟不上;LR我一般用来验证新想法是否合适，如新加的特征是否有用，新的数据划分方式是否合适，删除那些特征合适等等。一般来说，LR适合干这类事情，一是其速度快，二是其模型简单，能够获得比较靠谱的反馈，而且其结果也不错，但是对于这类成绩需要精确到小数点后七位数字的比赛来说，显然就不合适了，在实际生产环境中倒是非常不错的选择。我最后就使用了LGB，4个叶子，600，800或者1200棵树，线上成绩对树的个数比较敏感。
 4. feature engineering:构造了300+特征，不选择特征的话成绩也还行，但是一直上不去。 尝试过L1-based和Tree_based的特征选择方法，基于统计的单一变量特征选择方法也尝试过，但是效果都差不多。从业务的角度来看，我感觉每一个特征都有用，每删除一个特征我都要犹豫半天。总的来说，1000棵树的LGB选择出来分裂过的特征有一半以上，我后来就固定使用如下方式构造分类器了：
-"""
+
+'''
 >clf1 = Pipeline([
     ('feature_selection', SelectFromModel(clf0,threshold=5)),
     ('classification', clf2)])
 >clf1.fit(train_set.values, train_label.values)
-"""
+'''
 　　还尝试过在构造的特征之上通过PCA，NMF，FA和FeatureAgglomeration构造一些meta-feature，就像stacking一样。加上如此构造的特征提交过一次，过拟合严重，导致直接我弃用了这种超二元特征构造方式。其实特征的构造有时也很玄学，从实际业务意义角度着手没错，但是像hashencoding这种，构造出来的特征鬼知道有什么意义，但是放到模型当中有时候却很work,还有simhash, minhash,对于短文本型的非数值型特征进行编码，你还别说，总会有编码后的某个0，1值成为强特。
 #### trick
 1. 构造特征的时候指定特征数据类型（dtype)可以节约1/2到3/4的内存。pandas默认整形用int，浮点用float64，但是很多整形特征用uint8就可以了，最多不过uint32，浮点型float32就能满足要求了，甚至float16也可以使用在某些特征上，如果你清楚你所构造的特征的取值范围的话。
@@ -71,8 +70,9 @@
 3. 使用groupby()+transform() 代替groupby().agg()+merge(）
 4. 加入temporal-invariant，spatial-invariant，temporal-spatial_invariant特征
 5. 统计最后或者某个日期之前活动的频率特征时可以使用apply（）结合如下函数：
-"""
->def count_occurence(x, span):
+
+'''
+def count_occurence(x, span):
     count_dict = Counter(list(x))
     # print(count_dict)
     occu = 0
@@ -80,7 +80,7 @@
         if i in count_dict.keys():
             occu += count_dict.get(i)
     return occu
-"""
+'''
 　　span为你想要统计的某个区间。更多特征提取函数详见github:
 #### 槽点
 
