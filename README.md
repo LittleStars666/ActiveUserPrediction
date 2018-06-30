@@ -12,42 +12,50 @@
 >des_user_register= df_user_register.describe(include="all")
 
 注意对于类别性特征，读取数据时需要将该特征的dtype显示设置为str，然后describe()中参数include设置为all，就可以分别得到类别型和数值型特征的统计信息了。
+```python
 >user_register_log = ["user_id", "register_day", "register_type", "device_type"]
 >dtype_user_register = {"user_id": np.uint32, "register_day": np.uint8, "register_type": np.uint8, "device_type": str}
 >df_user_register = pd.read_table("data/user_register_log.txt",header=None,names=user_register_log,index_col=None,dtype=dtype_user_register)
-
+```
 更深入一点，通过
+```python
 >print(df_user_register.groupby(by=["user_id","register_day"]).size())
-
+```
 可以得到基于user的详细信息，比如launch_day，video_create day, activity_day次数，
  使用groupby(["register_day"])得到每一天注册用户数，
+```python
 >print(df_user_register.groupby(by=["register_day"]).size())
-
+```
 可以在此基础之上进一步分析注册趋势，可以groupby(["register_day","register_type"])得到每一天注册类型的信息，相似的可以得到注册类型与注册设备的交互信息。通过分析数据，可以发现6，7；13，14；21，22，23，24；27，28；这几天注册用户突增，初步判定两天的为周末，21，22，23为小长假，24数据激增，进一步groupby()分析，发现这一天注册类型为3，设备类型为1，223，83的注册数据异常，将这部分数据单独提取出来
+```python
 >user_outliers = df_user_register["register_type"]==3)&((df_user_register["device_type"]==1)|(df_user_register["device_type"]==223)|(df_user_register["device_type"]==83))
-
+```
 然后分析后面几天这些用户是否还有出现，发现这些用户没有了任何活动，同时我将这部分用户提交到了线上进行验证过一次，评估结果出现division by zero error，说明precision和recall都为0,即这些用户都是非活跃用户，导致线上计算时出现bug，这也算是科赛平台的槽点之一吧。因为24号并不会出现在训练集，而会出现在测试集，所以如果测试集中包含此部分用户，会导致训练集与测试集分布有很大出入，所以完全可以删除此部分僵死用户，我删除后成绩提成0.001+。
 #### 特征构造
 一般来说，数据挖掘比赛=特征构造比赛。特征构造的好坏决定了模型的上限，也基本能够保证模型的下限。虽然这个比赛，论重要性，提交数据的多少排第一，这也应该是本次比赛最大的槽点了。原始数据笼共才12维，如何从这么少的数据当中挖掘出大量信息，这需要从业务角度进行深入思考。除了基本的统计信息，如count，min,max,mean,std,gap,var, rate, ratio等，还有哪些可以挖掘的重要的信息呢。 我一开始尝试使用规则来做，简单的限定了最后1，2，3，4，5天的活动次数，竟然能够在A榜取得0.815成绩，最初这个成绩在稳居前100以内，而程序运行时间不过几秒钟。所以最初我觉得这个比赛应该是算法+规则取胜，就像中文分词里面，CRF，HMM， Perceptron， LSTM+CRF等等，分词算法一堆，但实际生产环境中还是能用词典就用词典，所以我中期每次都是将算法得出的结果跟规则得出的结果进行合并提交，但是中期算法效果不行，所以这么尝试了一段时间后我还是将重心转到算法这块来了。后来我想了想，觉得在这个比赛里面，简单规则能够解决的问题，算法难道不能解决吗？基于树的模型不就是一堆规则吗？算法应该是能够学习到这些规则的，关键是如何将自己构造规则的思路转化为特征。这么一想之后，我一下子构建了300+特征，包括最后1，2.。。15天的launch,video_create,activity的天数、次数，以及去除窗口中倒数1，2，。。。7天后的rate和day_rate信息，还有后5，7.。。11天的gap, var，day_var信息，last_day_launch(video_create, activity)等等（具体见GitHub代码）。为了处理窗口大小不一致的问题，可以另外构造一套带windows权重的特征(spatial_invariant)；为了处理统一窗口中不同用户注册时间长短不一问题，可以再构造一套带register_time权重的特征(temporal_invariant)；将以上空间和时间同时考虑，可以另外构造一套temporal-spatial_invariant的特征。这套特征构造完后，基本上能够保证A榜0.819以上。一般来说，基于单个特征构造的信息我称之为一元特征，如count（rate）,var等等，基于两个以上特征构造的特征我称之为多元特征，可以通过groupby（）进行构造，我开源的代码里面有一些非常常用的、方便的、简洁的的groupby()["feature_name"].transform()构造多元特征的方法，比讨论区通过groupby().agg(),然后merge()构造多元特征方便简洁快速的多，这也是我个人结合对pandas的理解摸索出来的一些小trick。一般来说，三元特征已经基本能够描述特征之间的关系了，再多往groupby()里面塞特征会极大降低程序处理速度，对于activity_log这种千万量级的数据，基本上就不要塞3个以上特征到groupby()里面了。在这个赛题里面，二元以上的特征可以在register.log中可以针对device_type和register_type构造一些，如
+```python
 >df_user_register_train["device_type_register_rate"] = (
 >df_user_register_train.groupby(by=["device_type", "register_type"])["register_type"].transform("count")).astype(
     np.uint16)
-
+```
 这个特征描述的是每一种设备类型下的某一种注册类型有多少人注册。
 还可以在activity.log中针对action_type，page， author_id和video_id之间构造一些，但是在这个文件当中构造多元特征会使得生成数据的过程慢很多倍，同时，生成的一些特征，如
+```
 >df_user_activity_train["user_author_action_type_num"] = (df_user_activity_train.groupby(by=["user_id", "author_id"])[
     "action_type"].transform(lambda x: x.nunique())).astype(np.uint8)
-
+```
 这个特征描述的是每一个user_id对每一个看过的视频的作者采取的不同动作个数。
 但这些多元特征的重要性并不高，至少在Tree_based 和L1_based feature selection中显示，他们的重要性为0，而且删除掉这些特征线下验证对结果没有影响。所以，经过几次试验后，我决定放弃构造基于activity.log的二元特征。
 构造频数（rate)特征时，最好构造相应的频率（ratio)特征，如对于上面那条rate特征，可以构造如下ratio特征：
+```
 >df_user_register_train["device_type_register_ratio"] = (
 >df_user_register_train["device_type_register_rate"] / df_user_register_train["device_type_rate"]).astype(np.float32)
-
+```
 其中df_user_register_train["device_type_rate"]  可以通过如下代码构造：
+```
 >df_user_register_train["device_type_rate"] = (
 >df_user_register_train.groupby(by=["device_type"])["device_type"].transform("count")).astype(np.uint16)
-
+```
 构造ratio特征可以消除windows大小不同的影响，但同时将rate留在特征集当中也是有用的。
 特征构造落脚点最好是有一定的业务意义，在本赛题当中，就是要从能够完善用户画像的角度着手，我从12个原始特征当中构造的300+特征，每一个都有其实际意义，但最终成绩不理想，感觉也不能是特征背锅，因为我中期尝试了各种特征选择方式，成绩还是提升不上去。思考了一下原因，觉得主要还是影响该赛题的因素比较多，下面我就要来讲一讲影响上分的一些因素了。
 #### 上分因素
@@ -56,12 +64,12 @@
 2. parameter tuning: 调参真是一门玄学，前期我尝试了多次使用hyperopt和BayesSearchCV()进行调参，但是效果都没有不调参好，所以后来我就基本不调参了，只稍稍调整一下LGB当中树的个数，叶子树固定为4，多了就过拟合（后期就是固定使用LGB了）。
 3. model: 尝试了NN， DNN，加Gaussian噪声的NN，Catboost, LR, XGBoost, 效果都不好。 Cat boost和NN有时候效果挺好，但太容易过拟合了;XGB从个人使用的情况来看，一般干不过LGB，而且速度跟不上;LR我一般用来验证新想法是否合适，如新加的特征是否有用，新的数据划分方式是否合适，删除那些特征合适等等。一般来说，LR适合干这类事情，一是其速度快，二是其模型简单，能够获得比较靠谱的反馈，而且其结果也不错，但是对于这类成绩需要精确到小数点后七位数字的比赛来说，显然就不合适了，在实际生产环境中倒是非常不错的选择。我最后就使用了LGB，4个叶子，600，800或者1200棵树，线上成绩对树的个数比较敏感。
 4. feature engineering:构造了300+特征，不选择特征的话成绩也还行，但是一直上不去。 尝试过L1-based和Tree_based的特征选择方法，基于统计的单一变量特征选择方法也尝试过，但是效果都差不多。从业务的角度来看，我感觉每一个特征都有用，每删除一个特征我都要犹豫半天。总的来说，1000棵树的LGB选择出来分裂过的特征有一半以上，我后来就固定使用如下方式构造分类器了：
-
+```
 >clf1 = Pipeline([
     ('feature_selection', SelectFromModel(clf0,threshold=5)),
     ('classification', clf2)])
 >clf1.fit(train_set.values, train_label.values)
-
+```
 　　还尝试过在构造的特征之上通过PCA，NMF，FA和FeatureAgglomeration构造一些meta-feature，就像stacking一样。加上如此构造的特征提交过一次，过拟合严重，导致直接我弃用了这种超二元特征构造方式。其实特征的构造有时也很玄学，从实际业务意义角度着手没错，但是像hashencoding这种，构造出来的特征鬼知道有什么意义，但是放到模型当中有时候却很work,还有simhash, minhash,对于短文本型的非数值型特征进行编码，你还别说，总会有编码后的某个0，1值成为强特。
 #### trick
 1. 构造特征的时候指定特征数据类型（dtype)可以节约1/2到3/4的内存。pandas默认整形用int，浮点用float64，但是很多整形特征用uint8就可以了，最多不过uint32，浮点型float32就能满足要求了，甚至float16也可以使用在某些特征上，如果你清楚你所构造的特征的取值范围的话。
@@ -70,6 +78,7 @@
 4. 加入temporal-invariant，spatial-invariant，temporal-spatial_invariant特征
 5. 统计最后或者某个日期之前活动的频率特征时可以使用apply（）结合如下函数：
 
+```
 def count_occurence(x, span):
     count_dict = Counter(list(x))
     # print(count_dict)
@@ -78,7 +87,8 @@ def count_occurence(x, span):
         if i in count_dict.keys():
             occu += count_dict.get(i)
     return occu
-　　span为你想要统计的某个区间。更多特征提取函数详见github:
+```
+span为你想要统计的某个区间。更多特征提取函数详见github:
 #### 槽点
 
 1. 一两千人同时登录科赛网就崩溃，跟学校选课系统一样脆弱。
