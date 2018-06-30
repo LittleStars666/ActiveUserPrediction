@@ -8,9 +8,9 @@
 　　预测哪些用户活跃，哪些用户不活跃，这就是一个经典的二分类问题。但现在问题是并没有给定有标签数据，如何做预测。所以第一步，需要我们自己想方法构造标签。具体的，可以使用滑窗法。比如，使用24-30的数据来标注1-23天的数据(label train_set 1-23 with data from 24-30)，可以使用此方法构造很多训练集。测试集可以是day 1-30， 也可以是15-30，whatever. 测试集区间不能太小，可以与训练集窗口值相同，也可以不同（构造window-invariant的特征）。
 #### 数据分析
 　　进入赛题，首先需要了解数据。最基本的， 每一维特征代表什么意义，每一维特征的count,min,max,mean, std, unique数目等等基本信息。 这里使用pandas 的df.describe(include="all")就可以知道这些信息了。
-
+```python
 >des_user_register= df_user_register.describe(include="all")
-
+```
 注意对于类别性特征，读取数据时需要将该特征的dtype显示设置为str，然后describe()中参数include设置为all，就可以分别得到类别型和数值型特征的统计信息了。
 ```python
 >user_register_log = ["user_id", "register_day", "register_type", "device_type"]
@@ -32,7 +32,11 @@
 ```
 然后分析后面几天这些用户是否还有出现，发现这些用户没有了任何活动，同时我将这部分用户提交到了线上进行验证过一次，评估结果出现division by zero error，说明precision和recall都为0,即这些用户都是非活跃用户，导致线上计算时出现bug，这也算是科赛平台的槽点之一吧。因为24号并不会出现在训练集，而会出现在测试集，所以如果测试集中包含此部分用户，会导致训练集与测试集分布有很大出入，所以完全可以删除此部分僵死用户，我删除后成绩提成0.001+。
 #### 特征构造
-一般来说，数据挖掘比赛=特征构造比赛。特征构造的好坏决定了模型的上限，也基本能够保证模型的下限。虽然这个比赛，论重要性，提交数据的多少排第一，这也应该是本次比赛最大的槽点了。原始数据笼共才12维，如何从这么少的数据当中挖掘出大量信息，这需要从业务角度进行深入思考。除了基本的统计信息，如count，min,max,mean,std,gap,var, rate, ratio等，还有哪些可以挖掘的重要的信息呢。 我一开始尝试使用规则来做，简单的限定了最后1，2，3，4，5天的活动次数，竟然能够在A榜取得0.815成绩，最初这个成绩在稳居前100以内，而程序运行时间不过几秒钟。所以最初我觉得这个比赛应该是算法+规则取胜，就像中文分词里面，CRF，HMM， Perceptron， LSTM+CRF等等，分词算法一堆，但实际生产环境中还是能用词典就用词典，所以我中期每次都是将算法得出的结果跟规则得出的结果进行合并提交，但是中期算法效果不行，所以这么尝试了一段时间后我还是将重心转到算法这块来了。后来我想了想，觉得在这个比赛里面，简单规则能够解决的问题，算法难道不能解决吗？基于树的模型不就是一堆规则吗？算法应该是能够学习到这些规则的，关键是如何将自己构造规则的思路转化为特征。这么一想之后，我一下子构建了300+特征，包括最后1，2.。。15天的launch,video_create,activity的天数、次数，以及去除窗口中倒数1，2，。。。7天后的rate和day_rate信息，还有后5，7.。。11天的gap, var，day_var信息，last_day_launch(video_create, activity)等等（具体见GitHub代码）。为了处理窗口大小不一致的问题，可以另外构造一套带windows权重的特征(spatial_invariant)；为了处理统一窗口中不同用户注册时间长短不一问题，可以再构造一套带register_time权重的特征(temporal_invariant)；将以上空间和时间同时考虑，可以另外构造一套temporal-spatial_invariant的特征。这套特征构造完后，基本上能够保证A榜0.819以上。一般来说，基于单个特征构造的信息我称之为一元特征，如count（rate）,var等等，基于两个以上特征构造的特征我称之为多元特征，可以通过groupby（）进行构造，我开源的代码里面有一些非常常用的、方便的、简洁的的groupby()["feature_name"].transform()构造多元特征的方法，比讨论区通过groupby().agg(),然后merge()构造多元特征方便简洁快速的多，这也是我个人结合对pandas的理解摸索出来的一些小trick。一般来说，三元特征已经基本能够描述特征之间的关系了，再多往groupby()里面塞特征会极大降低程序处理速度，对于activity_log这种千万量级的数据，基本上就不要塞3个以上特征到groupby()里面了。在这个赛题里面，二元以上的特征可以在register.log中可以针对device_type和register_type构造一些，如
+　　一般来说，数据挖掘比赛=特征构造比赛。特征构造的好坏决定了模型的上限，也基本能够保证模型的下限。虽然这个比赛，论重要性，提交数据的多少排第一，这也应该是本次比赛最大的槽点了。原始数据笼共才12维，如何从这么少的数据当中挖掘出大量信息，这需要从业务角度进行深入思考。除了基本的统计信息，如count，min,max,mean,std,gap,var, rate, ratio等，还有哪些可以挖掘的重要的信息呢。
+  　我一开始尝试使用规则来做，简单的限定了最后1，2，3，4，5天的活动次数，竟然能够在A榜取得0.815成绩，最初这个成绩在稳居前100以内，而程序运行时间不过几秒钟。所以最初我觉得这个比赛应该是算法+规则取胜，就像中文分词里面，CRF，HMM， Perceptron， LSTM+CRF等等，分词算法一堆，但实际生产环境中还是能用词典就用词典．
+   所以我中期每次都是将算法得出的结果跟规则得出的结果进行合并提交，但是中期算法效果不行，所以这么尝试了一段时间后我还是将重心转到算法这块来了。后来我想了想，觉得在这个比赛里面，简单规则能够解决的问题，算法难道不能解决吗？基于树的模型不就是一堆规则吗？算法应该是能够学习到这些规则的，关键是如何将自己构造规则的思路转化为特征。这么一想之后，我一下子构建了300+特征，包括最后1，2.。。15天的launch,video_create,activity的天数、次数，以及去除窗口中倒数1，2，。。。7天后的rate和day_rate信息，还有后5，7.。。11天的gap, var，day_var信息，last_day_launch(video_create, activity)等等（具体见GitHub代码（https://github.com/hellobilllee/ActiveUserPrediction)）。
+   为了处理窗口大小不一致的问题，可以另外构造一套带windows权重的特征(spatial_invariant)；为了处理统一窗口中不同用户注册时间长短不一问题，可以再构造一套带register_time权重的特征(temporal_invariant)；将以上空间和时间同时考虑，可以另外构造一套temporal-spatial_invariant的特征。这套特征构造完后，基本上能够保证A榜0.819以上。一般来说，基于单个特征构造的信息我称之为一元特征，如count（rate）,var等等，基于两个以上特征构造的特征我称之为多元特征，可以通过groupby（）进行构造，我开源的代码里面有一些非常常用的、方便的、简洁的的groupby()["feature_name"].transform()构造多元特征的方法，比讨论区通过groupby().agg(),然后merge()构造多元特征方便简洁快速的多，这也是我个人结合对pandas的理解摸索出来的一些小trick。
+   一般来说，三元特征已经基本能够描述特征之间的关系了，再多往groupby()里面塞特征会极大降低程序处理速度，对于activity_log这种千万量级的数据，基本上就不要塞3个以上特征到groupby()里面了。在这个赛题里面，二元以上的特征可以在register.log中可以针对device_type和register_type构造一些，如
 ```python
 >df_user_register_train["device_type_register_rate"] = (
 >df_user_register_train.groupby(by=["device_type", "register_type"])["register_type"].transform("count")).astype(
@@ -88,7 +92,7 @@ def count_occurence(x, span):
             occu += count_dict.get(i)
     return occu
 ```
-span为你想要统计的某个区间。更多特征提取函数详见github:
+span为你想要统计的某个区间。更多特征提取函数详见github（https://github.com/hellobilllee/ActiveUserPrediction):
 #### 槽点
 
 1. 一两千人同时登录科赛网就崩溃，跟学校选课系统一样脆弱。
