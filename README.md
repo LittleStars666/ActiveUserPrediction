@@ -1,7 +1,8 @@
 ### 2018中国高校计算机大数据挑战赛-快手活跃用户预测
 
 　　第一次认真参与的机器学习比赛，初赛A榜100+（0.8197f1 vs top1 0.822f1），B榜110+(0.8181f1 vs top1 0.8198f1)，无奈离双100俱乐部还差了点儿，只能憾别了。从月初到月末，在这个题目上花了不少精力，在此总结分享一下个人经验（https://github.com/hellobilllee/ActiveUserPrediction) , 希望能够给广大萌新和进入复赛的同学们提供些许参考价值吧。
-  
+#### 写在前面
+   主要文件为dataprocesspy文件夹里面的data_process_v9.py; lgbpy文件夹里面的lgb_v16.py;NN在nnpy文件夹；各个版本间差别比较小，所以看最新版本的代码就可以了。
 #### 赛题背景
 　　基于“快手”短视频脱敏和采样后的数据信息，预测未来一段时间活跃的用户。具体的，初赛是给定一个月的采样注册用户，以及与这些用户相关的App启动时间日志，视频拍摄时间日志和用户活动日志，预测这些用户还有哪些在下个月第一周还是活跃用户。
 #### 建模思路
@@ -34,7 +35,7 @@
 #### 特征构造
 　　一般来说，数据挖掘比赛=特征构造比赛。特征构造的好坏决定了模型的上限，也基本能够保证模型的下限。虽然这个比赛，论重要性，提交数据的多少排第一，这也应该是本次比赛最大的槽点了。原始数据笼共才12维，如何从这么少的数据当中挖掘出大量信息，这需要从业务角度进行深入思考。除了基本的统计信息，如count，min,max,mean,std,gap,var, rate, ratio等，还有哪些可以挖掘的重要的信息呢。
   　我一开始尝试使用规则来做，简单的限定了最后1，2，3，4，5天的活动次数，竟然能够在A榜取得0.815成绩，最初这个成绩在稳居前100以内，而程序运行时间不过几秒钟。所以最初我觉得这个比赛应该是算法+规则取胜，就像中文分词里面，CRF，HMM， Perceptron， LSTM+CRF等等，分词算法一堆，但实际生产环境中还是能用词典就用词典．
-   所以我中期每次都是将算法得出的结果跟规则得出的结果进行合并提交，但是中期算法效果不行，所以这么尝试了一段时间后我还是将重心转到算法这块来了。后来我想了想，觉得在这个比赛里面，简单规则能够解决的问题，算法难道不能解决吗？基于树的模型不就是一堆规则吗？算法应该是能够学习到这些规则的，关键是如何将自己构造规则的思路转化为特征。这么一想之后，我一下子构建了300+特征，包括最后1，2.。。15天的launch,video_create,activity的天数、次数，以及去除窗口中倒数1，2，。。。7天后的rate和day_rate信息，还有后5，7.。。11天的gap, var，day_var信息，last_day_launch(video_create, activity)等等（具体见GitHub代码（https://github.com/hellobilllee/ActiveUserPrediction)）。
+   所以我中期每次都是将算法得出的结果跟规则得出的结果进行合并提交，但是中期算法效果不行，所以这么尝试了一段时间后我还是将重心转到算法这块来了。后来我想了想，觉得在这个比赛里面，简单规则能够解决的问题，算法难道不能解决吗？基于树的模型不就是一堆规则吗？算法应该是能够学习到这些规则的，关键是如何将自己构造规则的思路转化为特征。这么一想之后，我一下子构建了300+特征，包括最后1，2.。。15天的launch,video_create,activity的天数、次数，以及去除窗口中倒数1，2，。。。7天后的rate和day_rate信息，还有后5，7.。。11天的gap, var，day_var信息，last_day_launch(video_create, activity)等等（具体见GitHub代码（https://github.com/hellobilllee/ActiveUserPrediction/blob/master/dataprocesspy/data_process_v9.py)）。
    为了处理窗口大小不一致的问题，可以另外构造一套带windows权重的特征(spatial_invariant)；为了处理统一窗口中不同用户注册时间长短不一问题，可以再构造一套带register_time权重的特征(temporal_invariant)；将以上空间和时间同时考虑，可以另外构造一套temporal-spatial_invariant的特征。这套特征构造完后，基本上能够保证A榜0.819以上。一般来说，基于单个特征构造的信息我称之为一元特征，如count（rate）,var等等，基于两个以上特征构造的特征我称之为多元特征，可以通过groupby（）进行构造，我开源的代码里面有一些非常常用的、方便的、简洁的的groupby()["feature_name"].transform()构造多元特征的方法，比讨论区通过groupby().agg(),然后merge()构造多元特征方便简洁快速的多，这也是我个人结合对pandas的理解摸索出来的一些小trick。
    一般来说，三元特征已经基本能够描述特征之间的关系了，再多往groupby()里面塞特征会极大降低程序处理速度，对于activity_log这种千万量级的数据，基本上就不要塞3个以上特征到groupby()里面了。在这个赛题里面，二元以上的特征可以在register.log中可以针对device_type和register_type构造一些，如
 ```python
@@ -92,7 +93,7 @@ def count_occurence(x, span):
             occu += count_dict.get(i)
     return occu
 ```
-span为你想要统计的某个区间。更多特征提取函数详见github（https://github.com/hellobilllee/ActiveUserPrediction):
+span为你想要统计的某个区间。更多特征提取函数详见github（https://github.com/hellobilllee/ActiveUserPrediction/blob/master/lgbpy/lgb_v16.py):
 #### 槽点
 
 1. 一两千人同时登录科赛网就崩溃，跟学校选课系统一样脆弱。
