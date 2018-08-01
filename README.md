@@ -1,6 +1,6 @@
 ### 2018中国高校计算机大数据挑战赛-快手活跃用户预测
 
-　　第一次认真参与的机器学习比赛，复赛A榜rank15(0.91106923auc vs top1 0.91245160auc).前前后后近两个月，在这个题目上花了不少精力，在此总结分享一下个人经验（https://github.com/hellobilllee/ActiveUserPrediction) , 希望能够给广大萌新和进入复赛的同学们提供些许参考价值吧。
+　　第一次认真参与的机器学习比赛，复赛A榜rank15(0.91106923auc vs top1 0.91245160auc). 前前后后近两个月，在这个题目上花了不少精力，在此总结分享一下个人经验（https://github.com/hellobilllee/ActiveUserPrediction) , 希望能够给广大萌新和甚至机器学习大佬们的提供些许参考价值吧。
 #### 写在前面
 &emsp;&emsp;主要文件为dataprocesspy文件夹里面的create_feature_v3_parallel/nonp.py(考虑到内存与CPU的合理利用，分别写了进/线程并行和非并行版本); lgbpy文件夹里面的lgb_model.py;NN在nnpy文件夹. 运行该版本数据处理代码并行需要20G以上内存，非并行8G内存便可，生成特征数为372维，可以通过调整代码中用于生成区间特征的几个for循环内数值大小控制特征生成数量，内存消耗与特征生成数成正比。
 #### 赛题背景
